@@ -1874,10 +1874,10 @@ static d3d12_function *d3d12_compile_shader(d3d12_device *device, d3d12_library 
     int source_size = library->source_length;
     Printer<StringStreamPrinter, 16> SS[4] = {NULL, NULL, NULL, NULL};
     D3D_SHADER_MACRO pDefines[] = {
-        {"__GROUPSHARED_SIZE_IN_BYTES", (SS[0] << shared_mem_bytes).str()},
-        {"__NUM_TREADS_X", (SS[1] << threadsX).str()},
-        {"__NUM_TREADS_Y", (SS[2] << threadsY).str()},
-        {"__NUM_TREADS_Z", (SS[3] << threadsZ).str()},
+        {"HALIDE_D3D12_KERNEL_GROUPSHARED_SIZE_IN_BYTES", (SS[0] << shared_mem_bytes).str()},
+        {"HALIDE_D3D12_KERNEL_NUM_THREADS_X", (SS[1] << threadsX).str()},
+        {"HALIDE_D3D12_KERNEL_NUM_THREADS_Y", (SS[2] << threadsY).str()},
+        {"HALIDE_D3D12_KERNEL_NUM_THREADS_Z", (SS[3] << threadsZ).str()},
         {NULL, NULL}};
     const char *shaderName = name;  // only used for debug information
     ID3DInclude *includeHandler = NULL;

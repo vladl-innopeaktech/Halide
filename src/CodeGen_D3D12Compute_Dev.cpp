@@ -1038,10 +1038,10 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
             total_shared_bytes += bytesize;
             stream << " [" << elements << "];\n";
         } else {
-            // fill-in __GROUPSHARED_SIZE_IN_BYTES later on when D3DCompile()
-            // is invoked in halide_d3d12compute_run(); must get divided by 4
-            // since groupshared memory elements have 32bit granularity:
-            stream << " [ ( __GROUPSHARED_SIZE_IN_BYTES + 3 ) / 4 ];\n";
+            // fill-in HALIDE_D3D12_KERNEL_GROUPSHARED_SIZE_IN_BYTES later on
+            // when D3DCompile() gets called within halide_d3d12compute_run();
+            // must divide by 4 (groupshared memory elements have 32bit granularity)
+            stream << " [ ( HALIDE_D3D12_KERNEL_GROUPSHARED_SIZE_IN_BYTES + 3 ) / 4 ];\n";
         }
         if (total_shared_bytes > StoragePackUnpack::ThreadGroupSharedStorageLimit) {
             debug(1) << "D3D12 CodeGen ERROR: Total thread group shared memory required for kernel '" << name
@@ -1052,7 +1052,7 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
         allocations.push(op->name, alloc);
     }
 
-    // Emit the kernel function preamble (numtreads):
+    // Emit the kernel function preamble (numthreads):
     // must first figure out the thread group size by traversing the stmt:
     struct FindThreadGroupSize : public IRVisitor {
         using IRVisitor::visit;
@@ -1095,12 +1095,12 @@ void CodeGen_D3D12Compute_Dev::CodeGen_D3D12Compute_C::add_kernel(Stmt s,
     FindThreadGroupSize ftg;
     s.accept(&ftg);
     // for undetermined 'numthreads' dimensions, insert placeholders to the code
-    // such as '__NUM_TREADS_X' that will later be patched when D3DCompile() is
-    // invoked in halide_d3d12compute_run()
+    // (e.g. HALIDE_D3D12_KERNEL_NUM_THREADS_X) that will later be patched when
+    // D3DCompile() is invoked in halide_d3d12compute_run()
     stream << "[ numthreads(";
-    (ftg.numthreads[0] > 0) ? (stream << " " << ftg.numthreads[0]) : (stream << " __NUM_TREADS_X ");
-    (ftg.numthreads[1] > 0) ? (stream << ", " << ftg.numthreads[1]) : (stream << ", __NUM_TREADS_Y ");
-    (ftg.numthreads[2] > 0) ? (stream << ", " << ftg.numthreads[2]) : (stream << ", __NUM_TREADS_Z ");
+    (ftg.numthreads[0] > 0) ? (stream << " " << ftg.numthreads[0]) : (stream << " HALIDE_D3D12_KERNEL_NUM_THREADS_X ");
+    (ftg.numthreads[1] > 0) ? (stream << ", " << ftg.numthreads[1]) : (stream << ", HALIDE_D3D12_KERNEL_NUM_THREADS_Y ");
+    (ftg.numthreads[2] > 0) ? (stream << ", " << ftg.numthreads[2]) : (stream << ", HALIDE_D3D12_KERNEL_NUM_THREADS_Z ");
     stream << ") ]\n";
 
     // Emit the kernel function prototype:
