@@ -129,6 +129,9 @@ std::ostream &operator<<(std::ostream &out, const MemoryType &t) {
     case MemoryType::GPUShared:
         out << "GPUShared";
         break;
+    case MemoryType::GPUTexture:
+        out << "GPUTexture";
+        break;
     case MemoryType::LockedCache:
         out << "LockedCache";
         break;
@@ -922,7 +925,7 @@ void IRPrinter::visit(const Fork *op) {
     stmts.push_back(rest);
 
     stream << get_indent() << "fork ";
-    for (Stmt s : stmts) {
+    for (const Stmt &s : stmts) {
         stream << "{\n";
         indent++;
         print(s);

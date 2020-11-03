@@ -81,8 +81,10 @@ void halide_profiler_pipeline_end(void *, void *);
 }
 
 #ifdef _WIN32
+#ifndef _MT
 __declspec(dllimport) float __cdecl roundf(float);
 __declspec(dllimport) double __cdecl round(double);
+#endif
 #else
 inline float asinh_f32(float x) {return asinhf(x);}
 inline float acosh_f32(float x) {return acoshf(x);}
@@ -297,7 +299,7 @@ protected:
         include_type(op->type);
         if (op->is_intrinsic(Call::lerp)) {
             // lower_lerp() can synthesize wider vector types.
-            for (auto &a : op->args) {
+            for (const auto &a : op->args) {
                 include_lerp_types(a.type());
             }
         }
@@ -405,8 +407,7 @@ CodeGen_C::~CodeGen_C() {
             if (target.has_feature(Target::CUDA)) {
                 stream << halide_internal_runtime_header_HalideRuntimeCuda_h << "\n";
             }
-            if (target.has_feature(Target::HVX_128) ||
-                target.has_feature(Target::HVX_64)) {
+            if (target.has_feature(Target::HVX)) {
                 stream << halide_internal_runtime_header_HalideRuntimeHexagonHost_h << "\n";
             }
             if (target.has_feature(Target::Metal)) {
@@ -733,6 +734,15 @@ CppVector<ElementType, Lanes> operator|(const CppVector<ElementType, Lanes> &a, 
 }
 
 template<typename ElementType, size_t Lanes>
+CppVector<ElementType, Lanes> operator^(const CppVector<ElementType, Lanes> &a, const CppVector<ElementType, Lanes> &b) {
+    CppVector<ElementType, Lanes> r;
+    for (size_t i = 0; i < Lanes; i++) {
+        r[i] = a[i] ^ b[i];
+    }
+    return r;
+}
+
+template<typename ElementType, size_t Lanes>
 CppVector<ElementType, Lanes> operator+(const CppVector<ElementType, Lanes> &a, const ElementType b) {
     CppVector<ElementType, Lanes> r;
     for (size_t i = 0; i < Lanes; i++) {
@@ -814,6 +824,15 @@ CppVector<ElementType, Lanes> operator|(const CppVector<ElementType, Lanes> &a, 
 }
 
 template<typename ElementType, size_t Lanes>
+CppVector<ElementType, Lanes> operator^(const CppVector<ElementType, Lanes> &a, const ElementType b) {
+    CppVector<ElementType, Lanes> r;
+    for (size_t i = 0; i < Lanes; i++) {
+        r[i] = a[i] ^ b;
+    }
+    return r;
+}
+
+template<typename ElementType, size_t Lanes>
 CppVector<ElementType, Lanes> operator+(const ElementType a, const CppVector<ElementType, Lanes> &b) {
     CppVector<ElementType, Lanes> r;
     for (size_t i = 0; i < Lanes; i++) {
@@ -890,6 +909,15 @@ CppVector<ElementType, Lanes> operator|(const ElementType a, const CppVector<Ele
     CppVector<ElementType, Lanes> r;
     for (size_t i = 0; i < Lanes; i++) {
         r[i] = a | b[i];
+    }
+    return r;
+}
+
+template<typename ElementType, size_t Lanes>
+CppVector<ElementType, Lanes> operator^(const ElementType a, const CppVector<ElementType, Lanes> &b) {
+    CppVector<ElementType, Lanes> r;
+    for (size_t i = 0; i < Lanes; i++) {
+        r[i] = a ^ b[i];
     }
     return r;
 }
@@ -1396,7 +1424,7 @@ void CodeGen_C::forward_declare_type_if_needed(const Type &t) {
         t.handle_type->inner_name.cpp_type_type == halide_cplusplus_type_name::Simple) {
         return;
     }
-    for (auto &ns : t.handle_type->namespaces) {
+    for (const auto &ns : t.handle_type->namespaces) {
         stream << "namespace " << ns << " { ";
     }
     switch (t.handle_type->inner_name.cpp_type_type) {
@@ -1416,7 +1444,7 @@ void CodeGen_C::forward_declare_type_if_needed(const Type &t) {
         internal_error << "Passing pointers to enums is unsupported\n";
         break;
     }
-    for (auto &ns : t.handle_type->namespaces) {
+    for (const auto &ns : t.handle_type->namespaces) {
         (void)ns;
         stream << " }";
     }
@@ -1439,7 +1467,7 @@ void CodeGen_C::compile(const Module &input) {
     // we emit function prototypes, since those may need the types.
     stream << "\n";
     for (const auto &f : input.functions()) {
-        for (auto &arg : f.args) {
+        for (const auto &arg : f.args) {
             forward_declare_type_if_needed(arg.type);
         }
     }
@@ -2711,7 +2739,7 @@ void CodeGen_C::visit(const Shuffle *op) {
     }
 
     std::vector<string> vecs;
-    for (Expr v : op->vectors) {
+    for (const Expr &v : op->vectors) {
         vecs.push_back(print_expr(v));
     }
     ostringstream rhs;
