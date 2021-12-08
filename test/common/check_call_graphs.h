@@ -18,9 +18,51 @@ class CheckCalls : public Halide::Internal::IRVisitor {
 public:
     CallGraphs calls;  // Caller -> vector of callees
     std::string producer = "";
+    std::map<std::string, std::string> module_producers;
+    Halide::Target target;
+
+    void add_module(const Halide::Module &m) {
+        const auto &functions = m.functions();
+        // Iterate in reverse order to get the main block before the closures it calls.
+        for (size_t i = functions.size(); i > 0; i--) {
+            auto dominating_producer = module_producers.find(functions[i - 1].name.c_str());
+            if (dominating_producer != module_producers.end()) {
+                producer = dominating_producer->second;
+            }
+            target = m.target();
+            functions[i - 1].body.accept(this);
+            producer = "";
+        }
+    }
 
 private:
     using Halide::Internal::IRVisitor::visit;
+
+    void visit(const Halide::Internal::Call *op) override {
+        if (op->is_intrinsic(Halide::Internal::Call::resolve_function_name)) {
+            assert(op->args.size() == 1);
+
+            const Halide::Internal::Call *decl_call = op->args[0].as<Halide::Internal::Call>();
+            assert(decl_call != nullptr);
+            std::string name;
+            if (decl_call->call_type == Halide::Internal::Call::ExternCPlusPlus) {
+                std::vector<std::string> namespaces;
+                name = Halide::Internal::extract_namespaces(decl_call->name, namespaces);
+                std::vector<Halide::ExternFuncArgument> mangle_args;
+                for (const auto &arg : decl_call->args) {
+                    mangle_args.emplace_back(arg);
+                }
+                name = Halide::Internal::cplusplus_function_mangled_name(name, namespaces, decl_call->type, mangle_args, target);
+            } else {
+                name = decl_call->name;
+            }
+
+            if (module_producers.find(name) == module_producers.end()) {
+                module_producers[name] = producer;
+            }
+        }
+        Halide::Internal::IRVisitor::visit(op);
+    }
 
     void visit(const Halide::Internal::ProducerConsumer *op) override {
         if (op->is_producer) {
@@ -47,9 +89,22 @@ private:
     }
 };
 
+inline void print_graph(const CallGraphs &g) {
+    for (const auto &node : g) {
+        printf("Graph node %s:\n", node.first.c_str());
+        for (const auto &edge : node.second) {
+            printf("    %s\n", edge.c_str());
+        }
+    }
+}
+
 // These are declared "inline" to avoid "unused function" warnings
 inline int check_call_graphs(CallGraphs &result, CallGraphs &expected) {
     if (result.size() != expected.size()) {
+        printf("Expected---\n");
+        print_graph(expected);
+        printf("Result---\n");
+        print_graph(result);
         printf("Expect %d callers instead of %d\n", (int)expected.size(), (int)result.size());
         return -1;
     }
@@ -74,7 +129,7 @@ inline int check_call_graphs(CallGraphs &result, CallGraphs &expected) {
                     return a.empty() ? b : a + ", " + b;
                 });
 
-            printf("Expect calless of %s to be (%s); got (%s) instead\n",
+            printf("Expect callees of %s to be (%s); got (%s) instead\n",
                    iter.first.c_str(), expected_str.c_str(), result_str.c_str());
             return -1;
         }

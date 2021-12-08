@@ -1820,7 +1820,7 @@ void CodeGen_C::compile(const LoweredFunc &f, const std::map<std::string, std::s
     set_name_mangling_mode(name_mangling);
 
     std::vector<std::string> namespaces;
-    std::string simple_name = extract_namespaces(f.name, namespaces);
+    std::string simple_name = c_print_name(extract_namespaces(f.name, namespaces), false);
     if (!is_c_plus_plus_interface()) {
         user_assert(namespaces.empty()) << "Namespace qualifiers not allowed on function name if not compiling with Target::CPlusPlusNameMangling.\n";
     }
@@ -2369,12 +2369,19 @@ void CodeGen_C::visit(const Call *op) {
     } else if (op->is_intrinsic(Call::alloca)) {
         internal_assert(op->args.size() == 1);
         internal_assert(op->type.is_handle());
+        const int64_t *sz = as_const_int(op->args[0]);
         if (op->type == type_of<struct halide_buffer_t *>() &&
             Call::as_intrinsic(op->args[0], {Call::size_of_halide_buffer_t})) {
             stream << get_indent();
             string buf_name = unique_name('b');
             stream << "halide_buffer_t " << buf_name << ";\n";
             rhs << "&" << buf_name;
+        } else if (op->type == type_of<struct halide_semaphore_t *>() &&
+                   sz && *sz == 16) {
+            stream << get_indent();
+            string semaphore_name = unique_name("sema");
+            stream << "halide_semaphore_t " << semaphore_name << ";\n";
+            rhs << "&" << semaphore_name;
         } else {
             // Make a stack of uint64_ts
             string size = print_expr(simplify((op->args[0] + 7) / 8));
@@ -2460,6 +2467,141 @@ void CodeGen_C::visit(const Call *op) {
             }
             rhs << "(&" << struct_name << ")";
         }
+    } else if (op->is_intrinsic(Call::define_typed_struct)) {
+        // Emit a declaration like:
+        //
+        //    struct foo {const int f_0, const char f_1, const int f_2};
+        //
+        // rhs is set to a nullptr of the new type.
+
+        // Declares a struct type. Returns a null pointer of the new type.
+        const size_t args_size = op->args.size();
+        internal_assert(args_size >= 1);
+
+        const StringImm *str_imm = op->args[0].as<StringImm>();
+        internal_assert(str_imm != nullptr);
+        std::string name = c_print_name(str_imm->value, false);
+
+        stream << get_indent() << "struct " << name;
+        stream << " {\n";
+        // List the types.
+        indent++;
+        for (size_t i = 1; i < args_size; i++) {
+            stream << get_indent() << print_type(op->args[i].type(), AppendSpace) << "f_" << i - 1 << ";\n";
+        }
+        indent--;
+        stream << get_indent() << "};\n";
+        rhs << "((" << name << " *)nullptr)";
+    } else if (op->is_intrinsic(Call::forward_declare_typed_struct)) {
+        // Emit a declaration like:
+        //
+        //   struct foo;
+        //
+        // rhs is set to a nullptr of the given type.
+        internal_assert(op->args.size() == 1);
+
+        const StringImm *str_imm = op->args[0].as<StringImm>();
+        internal_assert(str_imm != nullptr);
+        std::string name = c_print_name(str_imm->value, false);
+
+        if (!starts_with(name, "halide_")) {
+            // Types beginning with halide_ don't need forward declaration (e.g. halide_buffer_t).
+            stream << get_indent() << "struct " << name << ";\n";
+        }
+        rhs << "((" << name << " *)nullptr)";
+    } else if (op->is_intrinsic(Call::make_typed_struct)) {
+        internal_assert(op->args.size() >= 2);
+
+        string type_carrier = print_expr(op->args[0]);
+        const int64_t *count_ptr = as_const_int(op->args[1]);
+        internal_assert(count_ptr != nullptr);
+        int64_t count = *count_ptr;
+
+        // Get the args
+        vector<string> values;
+        for (size_t i = 2; i < op->args.size(); i++) {
+            values.push_back(print_expr(op->args[i]));
+        }
+        string struct_name = unique_name('s');
+        string array_specifier;
+        if (count > 0) {
+            array_specifier = "[]";
+        }
+        stream << get_indent() << "std::remove_pointer<decltype(" << type_carrier << ")>::type " << struct_name << array_specifier << " = {\n";
+        // List the values.
+        indent++;
+        int item = 0;
+        size_t initializer_count = values.size() / count;
+        internal_assert((values.size() % count) == 0);
+        do {
+            if (count > 0) {
+                stream << get_indent() << "{\n";
+                indent++;
+            }
+            for (size_t i = 0; i < initializer_count; i++) {
+                stream << get_indent() << values[i + item * initializer_count];
+                if (i < op->args.size() - 1) {
+                    stream << ",";
+                }
+                stream << "\n";
+            }
+            if (count > 0) {
+                indent--;
+                stream << get_indent() << "},\n";
+            }
+            item += 1;
+        } while (item < count);
+        indent--;
+        stream << get_indent() << "};\n";
+        // Return a pointer to it of the appropriate type
+
+        // TODO: This is dubious type-punning. We really need to
+        // find a better way to do this. We dodge the problem for
+        // the specific case of buffer shapes in the case above.
+        if (op->type.handle_type) {
+            rhs << "(" << print_type(op->type) << ")";
+        }
+        rhs << "(&" << struct_name << ((count > 0) ? "[0])" : ")");
+    } else if (op->is_intrinsic(Call::load_typed_struct_member)) {
+        // Given an instance of a typed_struct, a definition of a typed_struct,
+        // and the index of a slot, load the value of that slot.
+        //
+        // An instance of a typed_struct is an Expr of Handle() type that has been
+        // created by a call to make_typed_struct.
+        //
+        // A definiton of a typed_struct is an Expr of Handle() type that has been
+        // created by a call to define_typed_struct.
+        //
+        // Note that both the instance and definition are needed because the instance
+        // is often a void* by the time it is -- it will have been been passed through
+        // an API that takes an opaque pointer as a void*, and needs explicit casting
+        // back to the correct type for safe field access.
+        //
+        // It is assumed that the slot index is valid for the given typed_struct.
+        //
+        // TODO: this comment is replicated in CodeGen_LLVM and should be updated there too.
+        // TODO: https://github.com/halide/Halide/issues/6468
+
+        internal_assert(op->args.size() == 3);
+        std::string typed_struct_instance = print_expr(op->args[0]);
+        std::string typed_struct_definition = print_expr(op->args[1]);
+        const uint64_t *index = as_const_uint(op->args[2]);
+        internal_assert(index != nullptr);
+        rhs << "((decltype(" << typed_struct_definition << "))" << typed_struct_instance << ")->"
+            << "f_" << *index;
+    } else if (op->is_intrinsic(Call::resolve_function_name)) {
+        internal_assert(op->args.size() == 1);
+        const Call *decl_call = op->args[0].as<Call>();
+        internal_assert(decl_call != nullptr);
+        std::string c_name = c_print_name(decl_call->name, false);
+        rhs << "(&" << c_name << ")";
+    } else if (op->is_intrinsic(Call::get_user_context)) {
+        internal_assert(op->args.empty());
+        rhs << "_ucon";
+    } else if (op->is_intrinsic(Call::get_pointer_symbol_or_null)) {
+        internal_assert(op->args.size() == 2);
+        // TODO(zalman|abadams): Figure out how to get rid of the maybe foo.buffer exists, maybe it doesn't thing in closures.
+        rhs << "(nullptr)";
     } else if (op->is_intrinsic(Call::stringify)) {
         // Rewrite to an snprintf
         vector<string> printf_args;
@@ -2490,7 +2632,6 @@ void CodeGen_C::visit(const Call *op) {
         stream << get_indent() << "char " << buf_name << "[1024];\n";
         stream << get_indent() << "snprintf(" << buf_name << ", 1024, \"" << format_string << "\", " << with_commas(printf_args) << ");\n";
         rhs << buf_name;
-
     } else if (op->is_intrinsic(Call::register_destructor)) {
         internal_assert(op->args.size() == 2);
         const StringImm *fn = op->args[0].as<StringImm>();
@@ -2560,6 +2701,21 @@ void CodeGen_C::visit(const Call *op) {
         stream << get_indent() << rhs.str() << ";\n";
         // Make an innocuous assignment value for our caller (probably an Evaluate node) to ignore.
         print_assignment(op->type, "0");
+    } else if (op->is_intrinsic(Call::define_typed_struct) ||
+               op->is_intrinsic(Call::make_typed_struct) ||
+               op->is_intrinsic(Call::load_typed_struct_member) ||
+               op->is_intrinsic(Call::resolve_function_name)) {
+        // print_assigment will get the type info wrong for this case.
+        std::string rhs_str = rhs.str();
+        auto cached = cache.find(rhs_str);
+        if (cached == cache.end()) {
+            id = unique_name('_');
+            stream << get_indent() << "auto " << id << " = " << rhs_str << ";\n";
+        } else {
+            id = cached->second;
+        }
+        // Avoid unused variable warnings.
+        stream << get_indent() << "halide_unused(" << id << ");\n";
     } else {
         print_assignment(op->type, rhs.str());
     }
@@ -2710,9 +2866,10 @@ void CodeGen_C::visit(const Let *op) {
     if (op->value.type().is_handle()) {
         // The body might contain a Load that references this directly
         // by name, so we can't rewrite the name.
-        stream << get_indent() << print_type(op->value.type())
-               << " " << print_name(op->name)
-               << " = " << id_value << ";\n";
+        std::string name = print_name(op->name);
+        stream << get_indent() << "auto "
+               << name << " = " << id_value << ";\n";
+        stream << get_indent() << "halide_unused(" << name << ");\n";
     } else {
         Expr new_var = Variable::make(op->value.type(), id_value);
         body = substitute(op->name, new_var, body);
@@ -2800,12 +2957,14 @@ void CodeGen_C::visit(const VectorReduce *op) {
 void CodeGen_C::visit(const LetStmt *op) {
     string id_value = print_expr(op->value);
     Stmt body = op->body;
+
     if (op->value.type().is_handle()) {
         // The body might contain a Load or Store that references this
         // directly by name, so we can't rewrite the name.
-        stream << get_indent() << print_type(op->value.type())
-               << " " << print_name(op->name)
-               << " = " << id_value << ";\n";
+        std::string name = print_name(op->name);
+        stream << get_indent() << "auto "
+               << name << " = " << id_value << ";\n";
+        stream << get_indent() << "halide_unused(" << name << ");\n";
     } else {
         Expr new_var = Variable::make(op->value.type(), id_value);
         body = substitute(op->name, new_var, body);
@@ -3222,7 +3381,8 @@ HALIDE_FUNCTION_ATTRS
 int test1(struct halide_buffer_t *_buf_buffer, float _alpha, int32_t _beta, void const *__user_context) {
  void * const _ucon = const_cast<void *>(__user_context);
  void *_0 = _halide_buffer_get_host(_buf_buffer);
- void * _buf = _0;
+ auto _buf = _0;
+ halide_unused(_buf);
  {
   int64_t _1 = 43;
   int64_t _2 = _1 * _beta;

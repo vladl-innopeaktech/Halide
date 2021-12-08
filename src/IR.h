@@ -506,11 +506,15 @@ struct Call : public ExprNode<Call> {
         cast_mask,
         count_leading_zeros,
         count_trailing_zeros,
-        declare_box_touched,
         debug_to_file,
+        declare_box_touched,
+        define_typed_struct,
         div_round_to_zero,
         dynamic_shuffle,
         extract_mask_element,
+        forward_declare_typed_struct,
+        get_pointer_symbol_or_null,
+        get_user_context,
         gpu_thread_barrier,
         halving_add,
         halving_sub,
@@ -525,7 +529,9 @@ struct Call : public ExprNode<Call> {
         lerp,
         likely,
         likely_if_innermost,
+        load_typed_struct_member,
         make_struct,
+        make_typed_struct,
         memoize_expr,
         mod_round_to_zero,
         mul_shift_right,
@@ -538,6 +544,7 @@ struct Call : public ExprNode<Call> {
         reinterpret,
         require,
         require_mask,
+        resolve_function_name,
         return_second,
         rewrite_buffer,
         rounding_halving_add,
@@ -564,6 +571,7 @@ struct Call : public ExprNode<Call> {
         widening_shift_left,
         widening_shift_right,
         widening_sub,
+
         IntrinsicOpCount  // Sentinel: keep last.
     };
 
