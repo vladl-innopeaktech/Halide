@@ -142,6 +142,9 @@ $(BIN)/%.py.o: $(BIN)/%.py.cpp
 	@echo Building $@...
 	@$(CXX) -c $(FPIC) $(CCFLAGS) $^ -o $@
 
+# Fake up a linker script that will export *just* the PyInit entry
+# point we want. (If we don't do this we can have interesting failures
+# when loading multiple of these Python extensions in the same space.)
 ifeq ($(UNAME), Darwin)
 $(BIN)/ext/%.ldscript:
 	@echo Building $@...
