@@ -148,7 +148,7 @@ $(BIN)/ext/%.ldscript:
 	@mkdir -p $(@D)
 	@echo _PyInit_$* > $@
 
-PYEXT_LDSCRIPT_FLAG = -Wl,-exported_symbols_list
+PYEXT_LDSCRIPT_FLAG = -Wl,-exported_symbols_list %LDSCRIPT%
 else
 # Assume Desktop Linux
 $(BIN)/ext/%.ldscript:
@@ -158,7 +158,7 @@ $(BIN)/ext/%.ldscript:
 	@echo "  global: PyInit_$*;" >> $@
 	@echo "  local: *;" >> $@
 	@echo "};" >> $@
-PYEXT_LDSCRIPT_FLAG = -Wl,--version-script=
+PYEXT_LDSCRIPT_FLAG = -Wl,--version-script=%LDSCRIPT%
 endif
 
 # The Python extension of the generator is already in $(BIN), and is named
@@ -166,7 +166,7 @@ endif
 $(BIN)/ext/%.so: $(BIN)/%.py.o $(BIN)/%.a $(BIN)/runtime.a $(BIN)/ext/%.ldscript
 	@echo Building $@...
 	@mkdir -p $(@D)
-	@$(CXX) $(LDFLAGS) $(filter-out $(BIN)/ext/$*.ldscript,$^) -shared $(PYEXT_LDSCRIPT_FLAG)$(BIN)/ext/$*.ldscript -o $@
+	@$(CXX) $(LDFLAGS) $(filter-out $(BIN)/ext/$*.ldscript,$^) -shared $(subst %LDSCRIPT%,$(BIN)/ext/$*.ldscript,$(PYEXT_LDSCRIPT_FLAG)) -o $@
 
 test_correctness_addconstant_test: $(BIN)/ext/addconstantpy.so $(BIN)/ext/addconstant.so
 test_correctness_bit_test: $(BIN)/ext/bit.so $(BIN)/ext/bitpy.so
