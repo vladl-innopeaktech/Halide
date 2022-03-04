@@ -132,7 +132,7 @@ $(BIN)/%.py.cpp $(BIN)/%.a $(BIN)/%.h: $(BIN)/%.gen
 # Make each Python generator generate a Python extension:
 $(BIN)/%.py.cpp $(BIN)/%.a $(BIN)/%.h: $(ROOT_DIR)/correctness/%_generator.py $(MODULE)
 	@echo Building $@...
-	@$(PYTHON) $< \
+	@PYTHONPATH="$(BIN):$$PYTHONPATH" $(PYTHON) $< \
 	    -e static_library,c_header,python_extension \
 	    -g $(subst _generator,,$(notdir $(basename $<))) -o $(BIN) \
 	    target=host$(target_features_$(subst _generator,,$(notdir $(basename $<))))
