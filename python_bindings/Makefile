@@ -147,13 +147,17 @@ $(BIN)/ext/%.ldscript:
 	@echo Building $@...
 	@mkdir -p $(@D)
 	@echo _PyInit_$* > $@
+
 PYEXT_LDSCRIPT_FLAG = -Wl,-exported_symbols_list
 else
 # Assume Desktop Linux
 $(BIN)/ext/%.ldscript:
 	@echo Building $@...
 	@mkdir -p $(@D)
-	@echo _PyInit_$* > $@
+	@echo "{" > $@
+	@echo "  global: PyInit_$*;" >> $@
+	@echo "  local: *;" >> $@
+	@echo "};" >> $@
 PYEXT_LDSCRIPT_FLAG = -Wl,--version-script=
 endif
 
@@ -162,7 +166,7 @@ endif
 $(BIN)/ext/%.so: $(BIN)/%.py.o $(BIN)/%.a $(BIN)/runtime.a $(BIN)/ext/%.ldscript
 	@echo Building $@...
 	@mkdir -p $(@D)
-	@$(CXX) $(LDFLAGS) $(filter-out $(BIN)/ext/$*.ldscript,$^) -shared $(PYEXT_LDSCRIPT_FLAG) $(BIN)/ext/$*.ldscript -o $@
+	@$(CXX) $(LDFLAGS) $(filter-out $(BIN)/ext/$*.ldscript,$^) -shared $(PYEXT_LDSCRIPT_FLAG)$(BIN)/ext/$*.ldscript -o $@
 
 test_correctness_addconstant_test: $(BIN)/ext/addconstantpy.so $(BIN)/ext/addconstant.so
 test_correctness_bit_test: $(BIN)/ext/bit.so $(BIN)/ext/bitpy.so
