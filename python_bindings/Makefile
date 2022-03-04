@@ -142,13 +142,27 @@ $(BIN)/%.py.o: $(BIN)/%.py.cpp
 	@echo Building $@...
 	@$(CXX) -c $(FPIC) $(CCFLAGS) $^ -o $@
 
-# The Python extension of the generator is already in $(BIN), and is named
-# the same, so put the Python extension of the function into ext/.
-# TODO: Python extensions of generators should have a _generator suffix.
-$(BIN)/ext/%.so: $(BIN)/%.py.o $(BIN)/%.a $(BIN)/runtime.a
+ifeq ($(UNAME), Darwin)
+$(BIN)/ext/%.ldscript:
 	@echo Building $@...
 	@mkdir -p $(@D)
-	@$(CXX) $(LDFLAGS) $^ -shared -o $@
+	@echo _PyInit_$* > $@
+PYEXT_LDSCRIPT_FLAG = -Wl,-exported_symbols_list
+else
+# Assume Desktop Linux
+$(BIN)/ext/%.ldscript:
+	@echo Building $@...
+	@mkdir -p $(@D)
+	@echo _PyInit_$* > $@
+PYEXT_LDSCRIPT_FLAG = -Wl,--version-script=
+endif
+
+# The Python extension of the generator is already in $(BIN), and is named
+# the same, so put the Python extension of the function into ext/.
+$(BIN)/ext/%.so: $(BIN)/%.py.o $(BIN)/%.a $(BIN)/runtime.a $(BIN)/ext/%.ldscript
+	@echo Building $@...
+	@mkdir -p $(@D)
+	@$(CXX) $(LDFLAGS) $(filter-out $(BIN)/ext/$*.ldscript,$^) -shared $(PYEXT_LDSCRIPT_FLAG) $(BIN)/ext/$*.ldscript -o $@
 
 test_correctness_addconstant_test: $(BIN)/ext/addconstantpy.so $(BIN)/ext/addconstant.so
 test_correctness_bit_test: $(BIN)/ext/bit.so $(BIN)/ext/bitpy.so

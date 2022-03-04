@@ -1,5 +1,4 @@
-import addconstant
-import addconstantpy
+import addconstant, addconstantpy
 import numpy
 
 
@@ -45,7 +44,6 @@ def test(addconstant_impl_func):
     output_2d = numpy.zeros((2, 3), dtype=numpy.int8, order='F')
     output_3d = numpy.zeros((2, 2, 2), dtype=numpy.int8)
 
-    print(addconstant_impl_func)
     addconstant_impl_func(
         constant_u1,
         constant_u8, constant_u16, constant_u32, constant_u64,
