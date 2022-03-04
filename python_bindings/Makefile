@@ -68,7 +68,6 @@ $(BIN)/src/%.o: $(ROOT_DIR)/src/%.cpp
 	@mkdir -p $(@D)
 	@$(CXX) $(CCFLAGS) -c $< -o $@
 
-
 $(BIN)/%_generator.o: $(ROOT_DIR)/correctness/%_generator.cpp $(HALIDE_DISTRIB_PATH)/include/Halide.h
 	@echo Building $@...
 	@mkdir -p $(@D)
@@ -96,35 +95,47 @@ $(BIN)/generators/%.so: $(BIN)/%_PyStub.o $(BIN)/PyStubImpl.o $(BIN)/%_generator
 	@mkdir -p $(@D)
 	@$(CXX) $^ $(LDFLAGS) -shared -o $@
 
-# Compile the generators:
-$(BIN)/%.gen: $(HALIDE_DISTRIB_PATH)/tools/GenGen.cpp correctness/%_generator.cpp $(LIBHALIDE)
-	@echo Building $@...
-	@mkdir -p $(@D)
-	@$(CXX) $(CCFLAGS) $(LDFLAGS) $^ -o $@
-
-# Special generator for generating a runtime:
-$(BIN)/runtime.gen: $(HALIDE_DISTRIB_PATH)/tools/GenGen.cpp $(LIBHALIDE)
+# Compile all the C++ generators:
+$(BIN)/%.gen: $(HALIDE_DISTRIB_PATH)/tools/GenGen.cpp $(BIN)/%_generator.o $(LIBHALIDE)
 	@echo Building $@...
 	@mkdir -p $(@D)
 	@$(CXX) $(CCFLAGS) $(LDFLAGS) $^ -o $@
 
 # Generate a runtime:
-$(BIN)/runtime.a: $(BIN)/runtime.gen
+$(BIN)/runtime_generator.py:
 	@echo Building $@...
 	@mkdir -p $(@D)
-	@$< -r runtime -o $(BIN) target=host
+	@echo "import halide as hl" > $@
+	@echo "if __name__ == '__main__':" >> $@
+	@echo "    hl.main()" >> $@
+
+$(BIN)/runtime.a: $(BIN)/runtime_generator.py $(MODULE)
+	@echo Building $@...
+	@mkdir -p $(@D)
+	@$(PYTHON) $< -r runtime -o $(BIN) target=host
 
 # Which target features to use for which test targets.
 target_features_addconstant=-no_runtime
+target_features_addconstantpy=-no_runtime
 target_features_bit=-no_runtime
+target_features_bitpy=-no_runtime
 target_features_user_context=-user_context-no_runtime
 
-# Make the generator generate a Python extension:
+# Make each C++ generator generate a Python extension:
 $(BIN)/%.py.cpp $(BIN)/%.a $(BIN)/%.h: $(BIN)/%.gen
 	@echo Building $@...
-	@LD_LIBRARY_PATH=$(HALIDE_DISTRIB_PATH)/bin $< -e static_library,c_header,python_extension \
+	@LD_LIBRARY_PATH=$(HALIDE_DISTRIB_PATH)/bin $< \
+	    -e static_library,c_header,python_extension \
 	    -g $(notdir $(basename $<)) -o $(BIN) \
 	    target=host$(target_features_$(notdir $(basename $<)))
+
+# Make each Python generator generate a Python extension:
+$(BIN)/%.py.cpp $(BIN)/%.a $(BIN)/%.h: $(ROOT_DIR)/correctness/%_generator.py $(MODULE)
+	@echo Building $@...
+	@$(PYTHON) $< \
+	    -e static_library,c_header,python_extension \
+	    -g $(subst _generator,,$(notdir $(basename $<))) -o $(BIN) \
+	    target=host$(target_features_$(subst _generator,,$(notdir $(basename $<))))
 
 # Compile the generated Python extension(s):
 $(BIN)/%.py.o: $(BIN)/%.py.cpp
@@ -136,17 +147,22 @@ $(BIN)/%.py.o: $(BIN)/%.py.cpp
 # TODO: Python extensions of generators should have a _generator suffix.
 $(BIN)/ext/%.so: $(BIN)/%.py.o $(BIN)/%.a $(BIN)/runtime.a
 	@echo Building $@...
-	@mkdir -p $(BIN)/ext
+	@mkdir -p $(@D)
 	@$(CXX) $(LDFLAGS) $^ -shared -o $@
 
-test_correctness_addconstant_test: $(BIN)/ext/addconstant.so
-test_correctness_bit_test: $(BIN)/ext/bit.so
+test_correctness_addconstant_test: $(BIN)/ext/addconstantpy.so $(BIN)/ext/addconstant.so
+test_correctness_bit_test: $(BIN)/ext/bit.so $(BIN)/ext/bitpy.so
 test_correctness_user_context_test: $(BIN)/ext/user_context.so
 test_correctness_pystub: $(BIN)/generators/simplestub.so $(BIN)/generators/complexstub.so $(BIN)/generators/partialbuildmethod.so $(BIN)/generators/nobuildmethod.so
 
-APPS = $(shell ls $(ROOT_DIR)/apps/*.py)
-CORRECTNESS = $(shell ls $(ROOT_DIR)/correctness/*.py)
-TUTORIAL = $(shell ls $(ROOT_DIR)/tutorial/*.py)
+APPS = $(wildcard $(ROOT_DIR)/apps/*.py)
+CORRECTNESS = $(wildcard $(ROOT_DIR)/correctness/*.py)
+TUTORIAL = $(wildcard $(ROOT_DIR)/tutorial/*.py)
+
+# Filter out any Python generators
+APPS := $(filter-out $(wildcard $(ROOT_DIR)/apps/*_generator.py),$(APPS))
+CORRECTNESS := $(filter-out $(wildcard $(ROOT_DIR)/correctness/*_generator.py),$(CORRECTNESS))
+TUTORIAL := $(filter-out $(wildcard $(ROOT_DIR)/tutorial/*_generator.py),$(TUTORIAL))
 
 .PHONY: test_apps
 test_apps: $(APPS:$(ROOT_DIR)/apps/%.py=test_apps_%)

@@ -1,11 +1,12 @@
 import addconstant
+import addconstantpy
 import numpy
 
 
 ERROR_THRESHOLD = 0.0001
 
 
-def test():
+def test(addconstant_impl_func):
     constant_u1 = True
     constant_u8 = 3
     constant_u16 = 49153
@@ -44,7 +45,8 @@ def test():
     output_2d = numpy.zeros((2, 3), dtype=numpy.int8, order='F')
     output_3d = numpy.zeros((2, 2, 2), dtype=numpy.int8)
 
-    addconstant.addconstant(
+    print(addconstant_impl_func)
+    addconstant_impl_func(
         constant_u1,
         constant_u8, constant_u16, constant_u32, constant_u64,
         constant_i8, constant_i16, constant_i32, constant_i64,
@@ -85,4 +87,5 @@ def test():
 
 
 if __name__ == "__main__":
-  test()
+  test(addconstant.addconstant)
+  test(addconstantpy.addconstantpy)

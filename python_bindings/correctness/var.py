@@ -54,3 +54,50 @@ def test_var():
 
 if __name__ == "__main__":
     test_var()
+
+
+# import halide as hl
+
+# x = hl.Var('x')
+# y = hl.Var('y')
+
+# # # Just as with Func.compile_to_something(), you must explicitly specify
+# # # the Arguments here for now. TODO: add type hinting everywhere as an alternative.
+# # _FooGenArgs = [
+# #     hl.Argument("input_buf", hl.ArgumentKind.InputBuffer, hl.UInt(8), 2),
+# #     hl.Argument("input_scalar", hl.ArgumentKind.InputScalar, hl.Int(32), 0),
+# #     hl.Argument("output_buf", hl.ArgumentKind.OutputBuffer, hl.UInt(8), 2),
+# # ]
+
+# # # "foo_bar" is the build-system name of the Generator
+# # @hl.generator("foo_bar", _FooGenArgs)
+# # def FooGen(context, input_buf, input_scalar):
+# #     output_buf = hl.Func("output_buf")
+# #     output_buf[x, y] = input_buf[x, y] + input_scalar
+# #     return output_buf
+
+# @hl.generator("foo_bar")
+# class FooGen:
+#     zinput = hl.ImageParam("zinput", hl.UInt(8), 3)
+#     aoffset = hl.Param("aoffset", hl.Int(32))
+#     youtput = hl.OutputBuffer("youtput", hl.Float(32), 2)
+#     output = hl.OutputBuffer("output", hl.Float(64), 0)
+
+#     def configure(self):
+#         print("      FooGen configure")
+
+#     def generate(self):
+#         print("      FooGen generate")
+#         print("  self.youtput is ", self.youtput)
+#         self.youtput[x, y] = hl.f32(self.zinput[x, y, 0])
+#         foo = hl.Func("foo");
+#         foo[()] = 0
+#         self.output[()] = hl.f64(self.aoffset) * 2.5
+#         print("  self.youtput is now ", self.youtput)
+
+#     def schedule(self):
+#         print("      FooGen schedule")
+
+
+# if __name__ == "__main__":
+#     hl.main()

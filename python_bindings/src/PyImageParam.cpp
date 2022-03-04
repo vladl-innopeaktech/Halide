@@ -40,6 +40,7 @@ void define_image_param(py::module &m) {
             .def("width", &OutputImageParam::width)
             .def("height", &OutputImageParam::height)
             .def("channels", &OutputImageParam::channels)
+            .def("parameter", &OutputImageParam::parameter)
 
             .def("__repr__", [](const OutputImageParam &im) -> std::string {
                 std::ostringstream o;
@@ -57,8 +58,12 @@ void define_image_param(py::module &m) {
     auto image_param_class =
         py::class_<ImageParam>(m, "ImageParam", output_image_param_class)
             .def(py::init<>())
-            .def(py::init<Type, int>())
+            .def(py::init<Type, int>(), py::arg("type"), py::arg("dimensions"))
             .def(py::init<Type, int, std::string>(), py::arg("type"), py::arg("dimensions"), py::arg("name"))
+            // .def(py::init([](const std::string &name, const Type &type, int dimensions) -> ImageParam {
+            //          return ImageParam(type, dimensions, name);
+            //      }),
+            //      py::arg("name"), py::arg("type"), py::arg("dimensions"))
             .def("set", &ImageParam::set)
             .def("get", &ImageParam::get)
             .def("reset", &ImageParam::reset)

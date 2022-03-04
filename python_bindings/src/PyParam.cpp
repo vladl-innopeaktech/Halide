@@ -32,10 +32,27 @@ void add_param_methods(py::class_<Param<>> &param_class) {
 }  // namespace
 
 void define_param(py::module &m) {
+    // This is a "jsut-enough" wrapper around Internal::Parameter to let us pass it back
+    // and forth between Py and C++. It deliberately exposes no useful methods,
+    // and we should keep it that way.
+    auto parameter_class =
+        py::class_<Halide::Internal::Parameter>(m, "InternalParameter")
+            .def(py::init<const Halide::Internal::Parameter&>(), py::arg("p"))
+            .def("__repr__", [](const Halide::Internal::Parameter &p) -> std::string {
+                std::ostringstream o;
+                // Don't leak any info but the name into the repr string.
+                o << "<halide.InternalParameter '" << p.name() << "'>";
+                return o.str();
+            });
+
     auto param_class =
         py::class_<Param<>>(m, "Param")
             .def(py::init<Type>(), py::arg("type"))
             .def(py::init<Type, std::string>(), py::arg("type"), py::arg("name"))
+            // .def(py::init([](const std::string &name, const Type &type) -> Param<> {
+            //          return Param<>(type, name);
+            //      }),
+            //      py::arg("name"), py::arg("type"))
             .def("name", &Param<>::name)
             .def("type", &Param<>::type)
             .def("set_range", &Param<>::set_range)
@@ -43,6 +60,9 @@ void define_param(py::module &m) {
             .def("set_max_value", &Param<>::set_max_value)
             .def("min_value", &Param<>::min_value)
             .def("max_value", &Param<>::max_value)
+            .def("parameter", [](const Param<> &param) -> Halide::Internal::Parameter {
+                return param.parameter();
+            })
 
             .def("__repr__", [](const Param<> &param) -> std::string {
                 std::ostringstream o;
